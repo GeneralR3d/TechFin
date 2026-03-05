@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { TrendingUp } from "lucide-react";
 import { PremiumToggle } from "@/components/ui/bouncy-toggle";
@@ -17,6 +18,13 @@ const navLinks = [
 export function TopNav() {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const isDark = mounted && theme === "dark";
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/60 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -43,10 +51,10 @@ export function TopNav() {
         </nav>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-muted-foreground select-none">
-            {theme === "dark" ? "Dark" : "Light"}
+            {mounted ? (isDark ? "Dark" : "Light") : "Light"}
           </span>
           <PremiumToggle
-            defaultChecked={theme === "dark"}
+            defaultChecked={isDark}
             onChange={(checked) => setTheme(checked ? "dark" : "light")}
           />
         </div>
