@@ -15,6 +15,8 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 from app.models.base import Base  # noqa: E402
 from app.models.user import User  # noqa: E402, F401
 from app.models.holding import Holding  # noqa: E402, F401
+from app.models.raw_news import RawNewsArticle  # noqa: E402, F401
+from app.models.ingestion_job import IngestionJob  # noqa: E402, F401
 
 config = context.config
 

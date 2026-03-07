@@ -15,6 +15,13 @@ dependencies = [
     "pydantic-settings",
     "python-dotenv",
     "greenlet",
+    "neo4j>=5.0",
+    "openai>=1.0",
+    "apscheduler>=3.10",
+    "feedparser",
+    "pandas",
+    "psycopg2-binary>=2.9.11",
+    "asyncpg>=0.31.0",
 ]
 
 [tool.hatch.build.targets.wheel]
