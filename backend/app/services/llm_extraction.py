@@ -5,6 +5,7 @@ from openai import AsyncOpenAI
 
 from app.config import settings
 from app.data.yahoo_industries import YAHOO_INDUSTRIES, YAHOO_SECTORS
+from app.services.graph_queries import get_existing_context_nodes
 
 logger = logging.getLogger(__name__)
 
@@ -69,12 +70,27 @@ async def extract_entities(title: str, content: str) -> dict:
 
     user_prompt = f"Title: {title}\nContent: {content}"
 
+    context_nodes = await get_existing_context_nodes()
+    macro_themes = context_nodes["macro_themes"]
+    events = context_nodes["events"]
+
+    if macro_themes or events:
+        context_lines = ["EXISTING GRAPH DB NODES (reuse these strings exactly if applicable):"]
+        if macro_themes:
+            context_lines.append(f"MacroThemes: {', '.join(macro_themes)}")
+        if events:
+            context_lines.append(f"Events: {', '.join(events)}")
+        system_prompt = "\n".join(context_lines) + "\n\n" + SYSTEM_PROMPT
+        logger.info("[llm] Context: %d themes, %d events injected into prompt", len(macro_themes), len(events))
+    else:
+        system_prompt = SYSTEM_PROMPT
+
     try:
         client = _get_client()
         response = await client.chat.completions.create(
             model=settings.OPENAI_MODEL,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             response_format={"type": "json_object"},

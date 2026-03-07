@@ -124,6 +124,42 @@ async def get_active_themes(limit: int = 15) -> list[dict]:
         return [dict(r) async for r in result]
 
 
+async def get_existing_context_nodes(limit: int = 30) -> dict:
+    """Return top MacroTheme names and recent Event titles for LLM context injection."""
+    try:
+        driver = get_driver()
+        async with driver.session() as session:
+            theme_result = await session.run(
+                """
+                MATCH (t:MacroTheme)<-[:PART_OF_THEME]-()
+                RETURN t.name AS name, count(*) AS cnt
+                ORDER BY cnt DESC
+                LIMIT $limit
+                """,
+                limit=limit,
+            )
+            macro_themes = [r["name"] async for r in theme_result]
+
+            from datetime import datetime, timedelta, timezone
+            since = datetime.now(timezone.utc) - timedelta(days=30)
+            event_result = await session.run(
+                """
+                MATCH (e:Event)<-[:ABOUT]-(a:NewsArticle)
+                WHERE a.published_at >= $since
+                RETURN DISTINCT e.title AS title
+                LIMIT $limit
+                """,
+                since=since.isoformat(),
+                limit=limit,
+            )
+            events = [r["title"] async for r in event_result]
+
+        return {"macro_themes": macro_themes, "events": events}
+    except Exception as e:
+        logger.debug("[graph_queries] Could not fetch context nodes: %s", e)
+        return {"macro_themes": [], "events": []}
+
+
 async def get_sector_heatmap() -> list[dict]:
     driver = get_driver()
     async with driver.session() as session:
