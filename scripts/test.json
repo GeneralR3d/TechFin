@@ -1,0 +1,25 @@
+{
+    "title": "Crossmark Global Holdings Inc. Grows Stock Holdings in VeriSign, Inc. $VRSN",
+    "url": "https://www.marketbeat.com/instant-alerts/filing-crossmark-global-holdings-inc-grows-stock-holdings-in-verisign-inc-vrsn-2026-03-07/",
+    "published_at": "20260307T091122",
+    "summary": "Crossmark Global Holdings Inc. significantly increased its stake in VeriSign, Inc. by 57.6% in the third quarter, holding 31,427 shares valued at $8.786 million. VeriSign sees high institutional ownership, with major firms like Vanguard and State Street holding substantial positions. Despite slightly missing EPS expectations, the company reported a 7.6% increase in revenue and raised its quarterly dividend to $0.81 per share.",
+    "source": "Alphavantage",
+    "sentiment_score": 0.098557,
+    "ticker_sentiment": [
+        {
+            "VRSN": 0.219310
+        },
+        {
+            "AAPL": 0.092712
+        },
+        {
+            "GOOGL": 0.059974
+        },
+        {
+            "GOOG": 0.060797
+        },
+        {
+            "MSFT": 0.082986
+        }
+    ]
+}

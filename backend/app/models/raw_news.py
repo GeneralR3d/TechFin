@@ -16,9 +16,7 @@ class RawNewsArticle(Base):
     url: Mapped[str] = mapped_column(Text)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    source: Mapped[str] = mapped_column(String(64))   # "yahoo_rss", "reddit", etc.
-    platform: Mapped[str] = mapped_column(String(64))  # "yahoo_finance", "reddit"
-    ticker_hint: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    source: Mapped[str] = mapped_column(String(64))   # Either "alphavantage" or "Yahoo Finance"
     raw_tags: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
     graph_ingested: Mapped[bool] = mapped_column(Boolean, default=False)
     graph_ingested_at: Mapped[datetime | None] = mapped_column(
