@@ -64,13 +64,15 @@ Vite proxies `/api/*` requests to FastAPI on `http://localhost:8000`.
 - `reddit.py` — GET `?subreddit=`, OAuth token cache, mock fallback (auth-protected)
 - `social.py` — GET twitter/linkedin mock data (auth-protected)
 - `sentiment.py` — GET mock sentiment data (auth-protected)
+- `sectors.py` — GET sector data (auth-protected)
+- `market_movers.py` — GET market movers data (auth-protected)
 
 #### External API Services (`app/services/`)
 All follow try-real-API / fallback-to-mock pattern:
 - `yahoo_finance.py` — httpx + RapidAPI
 - `reddit.py` — OAuth client_credentials, token cache, retry on 401
-- `twitter.py`, `linkedin.py` — mock-only
-- `sentiment.py` — mock-only
+- `twitter.py`, `linkedin.py`, `sentiment.py` — mock-only
+- `sectors.py`, `market_movers.py` — external integrations
 
 ### Frontend (React + Vite)
 
@@ -79,7 +81,8 @@ All follow try-real-API / fallback-to-mock pattern:
 /login            → LoginPage
 /register         → RegisterPage
 / (protected)     → AppLayout (TopNav + FirstLoginDialog + Outlet)
-  /               → DashboardPage
+  /               → EventsPage
+  /dashboard      → DashboardPage
   /yahoo-finance  → YahooFinancePage
   /social-media   → SocialMediaPage
   /settings       → SettingsPage
@@ -99,7 +102,7 @@ All follow try-real-API / fallback-to-mock pattern:
 SWR hooks in `src/hooks/` with snake_case → camelCase transforms:
 - `useHoldings` — optimistic add/delete
 - `useFirstLogin` — checks `/api/auth/me`, manages onboarding
-- `useYahooFinance`, `useReddit`, `useSentiment`
+- `useYahooFinance`, `useReddit`, `useSentiment`, `useSectors`, `useMarketMovers`
 
 #### Path Alias
 `@/*` → `./src/*` (configured in `tsconfig.json` and `vite.config.ts`)
@@ -115,6 +118,7 @@ RAPIDAPI_YAHOO_FINANCE_HOST=yahoo-finance15.p.rapidapi.com
 REDDIT_CLIENT_ID=your_reddit_client_id
 REDDIT_CLIENT_SECRET=your_reddit_client_secret
 REDDIT_USER_AGENT=TechFin/1.0 by YourRedditUsername
+ALPHAVANTAGE_API_KEY=your_alphavantage_key_here
 ```
 
 ## Seed User
