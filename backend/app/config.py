@@ -19,5 +19,7 @@ class Settings(BaseSettings):
     REDDIT_CLIENT_SECRET: str = ""
     REDDIT_USER_AGENT: str = "TechFin/1.0"
 
+    ALPHAVANTAGE_API_KEY: str = ""
+
 
 settings = Settings()  # type: ignore[call-arg]

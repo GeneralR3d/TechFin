@@ -1,33 +1,26 @@
 import { PageWrapper } from "@/components/layout/PageWrapper";
-import { SentimentGrid } from "@/components/dashboard/SentimentGrid";
-import { TickerRecommendations } from "@/components/dashboard/TickerRecommendations";
-import { PortfolioByCategory } from "@/components/dashboard/PortfolioByCategory";
+import { MarketMovers } from "@/components/dashboard/MarketMovers";
+import { SectorHeatmap } from "@/components/dashboard/SectorHeatmap";
 
 export function DashboardPage() {
   return (
     <PageWrapper
       title="Dashboard"
-      description="Market sentiment overview and personalized investment suggestions"
+      description="Real-time sector performance and market movers"
     >
-      <div className="space-y-8">
-        <section>
+      <div className="flex gap-6">
+        <div className="w-[35%] shrink-0">
           <h2 className="mb-4 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            Market Sentiment
+            Market Movers
           </h2>
-          <SentimentGrid />
-        </section>
-        <section>
+          <MarketMovers />
+        </div>
+        <div className="flex-1 min-w-0">
           <h2 className="mb-4 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            Investment Suggestions
+            Sector Performance
           </h2>
-          <TickerRecommendations />
-        </section>
-        <section>
-          <h2 className="mb-4 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            Portfolio by Category
-          </h2>
-          <PortfolioByCategory />
-        </section>
+          <SectorHeatmap />
+        </div>
       </div>
     </PageWrapper>
   );
