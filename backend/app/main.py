@@ -13,6 +13,7 @@ from app.routes import (
     sectors,
     market_movers,
     ai_agents,
+    suggestions,
 )
 from app.routes import graph
 from app.database_graph import create_constraints, close_driver
@@ -47,3 +48,4 @@ app.include_router(sectors.router)
 app.include_router(market_movers.router)
 app.include_router(graph.router)
 app.include_router(ai_agents.router)
+app.include_router(suggestions.router)

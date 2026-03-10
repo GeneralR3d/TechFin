@@ -160,3 +160,97 @@ async def generate_theme_analysis(
     if result is not None:
         _cache_set(cache_key, result)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Portfolio suggestions
+# ---------------------------------------------------------------------------
+
+_PORTFOLIO_SUGGESTION_SCHEMA = """{
+  "suggestions": [
+    {
+      "ticker": "string",
+      "action": "HOLD" | "SELL",
+      "confidence": "high" | "medium" | "low",
+      "short_term_pct": number (estimated % price change over the near-term horizon, e.g. -11.0),
+      "short_term_label": "string (time horizon for short_term_pct, e.g. \"This week\", \"2 weeks\", \"1 month\")",
+      "long_term_pct": number (estimated % price change over a longer horizon, e.g. +30.0),
+      "long_term_label": "string (time horizon for long_term_pct, e.g. \"3 months\", \"6 months\", \"1 year\")",
+      "price_outlook": "string (1-2 sentence narrative covering both the near and long term trajectory)",
+      "reasoning": "string (2-3 sentences grounded in the news)"
+    }
+  ],
+  "market_context": "string (2-3 sentences on the overall market backdrop)"
+}"""
+
+_PORTFOLIO_SYSTEM_PROMPT = (
+    "You are a senior equity analyst. A user holds the following stocks in their portfolio. "
+    "Based on the most recent news articles and market signals provided, give hold/sell recommendations. "
+    "HOLD = expect price to be stable or rise net over the relevant horizon. SELL = meaningful downside risk. "
+    "For each ticker, choose appropriate time horizons that make sense given the news — "
+    "short_term could be 'This week', '2 weeks', or '1 month'; long_term could be '3 months', '6 months', or '1 year'. "
+    "Estimate realistic percentage price changes for each horizon (e.g. -11.0 short term but +30.0 long term). "
+    "Be direct and data-driven. Return ONLY valid JSON matching this exact schema:\n"
+    + _PORTFOLIO_SUGGESTION_SCHEMA
+    + "\nDo not invent news. Only reference what is in the provided articles."
+)
+
+
+async def generate_portfolio_suggestions(
+    holdings: list[dict],
+    articles_by_ticker: dict[str, list[dict]],
+    recent_market_articles: list[dict],
+) -> dict | None:
+    """Generate hold/sell suggestions for each holding based on recent news."""
+    # Build a cache key from sorted tickers
+    tickers = sorted(h["ticker"] for h in holdings)
+    cache_key = f"portfolio_suggestions:{','.join(tickers)}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    if not settings.OPENAI_API_KEY:
+        logger.debug("[llm_analysis] No OpenAI key — skipping portfolio suggestions")
+        return None
+
+    # Build prompt
+    holdings_text = "\n".join(
+        f"- {h['ticker']} (qty: {h.get('quantity', '?')})" for h in holdings
+    )
+
+    ticker_news_parts = []
+    for ticker in tickers:
+        articles = articles_by_ticker.get(ticker, [])
+        if articles:
+            ticker_news_parts.append(f"=== {ticker} ===\n" + _build_articles_text(articles, max_articles=5))
+        else:
+            ticker_news_parts.append(f"=== {ticker} ===\nNo specific recent news found.")
+
+    market_text = _build_articles_text(recent_market_articles, max_articles=8)
+
+    user_prompt = (
+        f"Portfolio Holdings:\n{holdings_text}\n\n"
+        f"Recent News Per Ticker:\n" + "\n\n".join(ticker_news_parts) + "\n\n"
+        f"General Market News:\n{market_text}"
+    )
+
+    try:
+        client = _get_client()
+        response = await client.chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": _PORTFOLIO_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_format={"type": "json_object"},
+            timeout=60.0,
+        )
+        raw = response.choices[0].message.content or "{}"
+        result = json.loads(raw)
+    except Exception as e:
+        logger.error("[llm_analysis] Portfolio suggestion OpenAI call failed: %s", e)
+        return None
+
+    if result:
+        _cache_set(cache_key, result)
+    return result

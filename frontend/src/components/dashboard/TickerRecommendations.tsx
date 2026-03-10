@@ -1,73 +1,142 @@
 import useSWR from "swr";
-import { TickerSuggestion } from "@/types/ticker";
+import { PortfolioSuggestionsResponse, TickerSuggestion } from "@/types/ticker";
 import { authedFetcher } from "@/lib/fetcher";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Lightbulb } from "lucide-react";
+import { Lightbulb, TrendingUp, TrendingDown, Info } from "lucide-react";
+
+function fmt(pct: number | null): string {
+  if (pct === null || pct === undefined) return "—";
+  const sign = pct >= 0 ? "+" : "";
+  return `${sign}${pct.toFixed(1)}%`;
+}
+
+function PctBlock({ label, pct }: { label: string | null; pct: number | null }) {
+  const isNeg = pct !== null && pct < 0;
+  const isPos = pct !== null && pct > 0;
+  return (
+    <div className="flex flex-col items-center">
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 text-center leading-tight">
+        {label ?? "—"}
+      </span>
+      <span
+        className={`text-xl font-bold tabular-nums ${
+          isNeg ? "text-red-500" : isPos ? "text-emerald-500" : "text-muted-foreground"
+        }`}
+      >
+        {fmt(pct)}
+      </span>
+    </div>
+  );
+}
+
+function ActionPill({ action }: { action: TickerSuggestion["action"] }) {
+  const isSell = action === "SELL";
+  return (
+    <div
+      className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-bold ${
+        isSell
+          ? "bg-red-500/15 text-red-600 dark:text-red-400"
+          : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+      }`}
+    >
+      {isSell ? <TrendingDown className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
+      {action}
+    </div>
+  );
+}
+
+function ConfidencePip({ confidence }: { confidence: TickerSuggestion["confidence"] }) {
+  const map = { low: 1, medium: 2, high: 3 };
+  const filled = map[confidence] ?? 1;
+  const colors = { low: "bg-orange-400", medium: "bg-yellow-400", high: "bg-emerald-400" };
+  return (
+    <span className="flex items-center gap-0.5" title={`${confidence} confidence`}>
+      {[1, 2, 3].map((i) => (
+        <span
+          key={i}
+          className={`inline-block h-1.5 w-2 rounded-sm ${i <= filled ? colors[confidence] : "bg-muted"}`}
+        />
+      ))}
+    </span>
+  );
+}
+
+function SuggestionCard({ s }: { s: TickerSuggestion }) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 flex flex-col gap-3 min-w-0">
+      {/* Top: ticker + action */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <span className="font-mono text-base font-bold tracking-tight">{s.ticker}</span>
+          <span className="text-[11px] text-muted-foreground">{s.quantity} shares</span>
+          <ConfidencePip confidence={s.confidence} />
+        </div>
+        <ActionPill action={s.action} />
+      </div>
+
+      {/* Middle: percentage estimates */}
+      <div className="flex items-center gap-4 rounded-lg bg-muted/40 px-4 py-2.5">
+        <PctBlock label={s.short_term_label} pct={s.short_term_pct} />
+        <div className="h-8 w-px bg-border" />
+        <PctBlock label={s.long_term_label} pct={s.long_term_pct} />
+      </div>
+
+      {/* Bottom: price outlook */}
+      {s.price_outlook && (
+        <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">{s.price_outlook}</p>
+      )}
+    </div>
+  );
+}
 
 export function TickerRecommendations() {
-  const { data, isLoading, error } = useSWR<TickerSuggestion[]>(
+  const { data, isLoading, error } = useSWR<PortfolioSuggestionsResponse>(
     "/api/suggestions",
     authedFetcher
   );
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-semibold">
           <Lightbulb className="h-4 w-4 text-amber-500" />
-          Investment Suggestions
+          AI Portfolio Suggestions
+          <span className="ml-auto text-xs font-normal text-muted-foreground">Short-term price outlook</span>
         </CardTitle>
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 w-full" />
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-44 w-full rounded-xl" />
             ))}
           </div>
         ) : error ? (
           <p className="text-sm text-muted-foreground">Failed to load suggestions.</p>
-        ) : !data || data.length === 0 ? (
+        ) : !data || data.suggestions.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Add holdings in Settings to receive personalized suggestions.
+            Add holdings in Settings to receive AI-powered hold/sell recommendations.
           </p>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Ticker</TableHead>
-                <TableHead>Quantity</TableHead>
-                <TableHead>Reason</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.map((s) => (
-                <TableRow key={s.ticker}>
-                  <TableCell>
-                    <Badge variant="outline" className="font-mono">
-                      {s.ticker}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm">{s.quantity}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {s.reason}
-                  </TableCell>
-                </TableRow>
+          <div className="space-y-3">
+            {/* Market context banner */}
+            {data.market_context && (
+              <div className="flex gap-2 rounded-lg bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/70" />
+                <span className="leading-relaxed">{data.market_context}</span>
+              </div>
+            )}
+            {/* Responsive grid — one card per ticker */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {data.suggestions.map((s) => (
+                <SuggestionCard key={s.ticker} s={s} />
               ))}
-            </TableBody>
-          </Table>
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>
   );
 }
+

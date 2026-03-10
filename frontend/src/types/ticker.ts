@@ -7,5 +7,17 @@ export interface Ticker {
 export interface TickerSuggestion {
   ticker: string;
   quantity: number;
-  reason: string;
+  action: "HOLD" | "SELL";
+  confidence: "high" | "medium" | "low";
+  short_term_pct: number | null;
+  short_term_label: string | null;
+  long_term_pct: number | null;
+  long_term_label: string | null;
+  price_outlook: string;
+  reasoning: string;
+}
+
+export interface PortfolioSuggestionsResponse {
+  suggestions: TickerSuggestion[];
+  market_context: string | null;
 }
