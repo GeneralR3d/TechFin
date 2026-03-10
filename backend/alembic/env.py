@@ -23,7 +23,10 @@ config = context.config
 # Override sqlalchemy.url from environment
 database_url = os.getenv("DATABASE_URL", "")
 if database_url:
-    config.set_main_option("sqlalchemy.url", database_url)
+    # Alembic's config parser treats '%' as interpolation syntax,
+    # so we need to escape them to support passwords/URLs containing '%'.
+    safe_database_url = database_url.replace("%", "%%")
+    config.set_main_option("sqlalchemy.url", safe_database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
