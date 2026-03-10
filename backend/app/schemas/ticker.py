@@ -10,4 +10,12 @@ class TickerResponse(BaseModel):
 class TickerSuggestion(BaseModel):
     ticker: str
     quantity: float
-    reason: str
+    action: str  # "HOLD" | "SELL"
+    confidence: str  # "high" | "medium" | "low"
+    price_outlook: str
+    reasoning: str
+
+
+class PortfolioSuggestionsResponse(BaseModel):
+    suggestions: list["TickerSuggestion"]
+    market_context: str | None = None
