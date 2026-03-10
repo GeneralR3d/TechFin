@@ -12,13 +12,6 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
-    RAPIDAPI_KEY: str = ""
-    RAPIDAPI_YAHOO_FINANCE_HOST: str = "yahoo-finance15.p.rapidapi.com"
-
-    REDDIT_CLIENT_ID: str = ""
-    REDDIT_CLIENT_SECRET: str = ""
-    REDDIT_USER_AGENT: str = "TechFin/1.0"
-
     ALPHAVANTAGE_API_KEY: str = ""
 
     NEO4J_URI: str = "bolt://localhost:7687"

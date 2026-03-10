@@ -8,7 +8,6 @@ import { RegisterPage } from "@/pages/RegisterPage";
 import { EventsPage } from "@/pages/EventsPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { YahooFinancePage } from "@/pages/YahooFinancePage";
-import { SocialMediaPage } from "@/pages/SocialMediaPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 
 export function App() {
@@ -24,7 +23,6 @@ export function App() {
                 <Route index element={<EventsPage />} />
                 <Route path="dashboard" element={<DashboardPage />} />
                 <Route path="yahoo-finance" element={<YahooFinancePage />} />
-                <Route path="social-media" element={<SocialMediaPage />} />
                 <Route path="settings" element={<SettingsPage />} />
               </Route>
             </Route>
