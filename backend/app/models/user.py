@@ -12,3 +12,4 @@ class User(Base):
     has_onboarded: Mapped[bool] = mapped_column(Boolean, default=False)
 
     holdings = relationship("Holding", back_populates="user", cascade="all, delete-orphan")
+    chat_sessions = relationship("ChatSession", back_populates="user", cascade="all, delete-orphan")

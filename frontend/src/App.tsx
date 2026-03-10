@@ -12,6 +12,7 @@ import { SettingsPage } from "@/pages/SettingsPage";
 import { EventDetailPage } from "@/pages/EventDetailPage";
 import { ThemeDetailPage } from "@/pages/ThemeDetailPage";
 import { EntityDetailPage } from "@/pages/EntityDetailPage";
+import { ChatPage } from "@/pages/ChatPage";
 
 export function App() {
   return (
@@ -30,6 +31,7 @@ export function App() {
                 <Route path="event/:eventId" element={<EventDetailPage />} />
                 <Route path="theme/:themeName" element={<ThemeDetailPage />} />
                 <Route path="entity/:entityType/:entityName" element={<EntityDetailPage />} />
+                <Route path="chat" element={<ChatPage />} />
               </Route>
             </Route>
           </Routes>

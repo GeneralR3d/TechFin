@@ -121,10 +121,11 @@ async def event_analysis(
 @router.get("/themes/active")
 async def active_themes(
     limit: int = 15,
+    days: int = 7,
     user: User = Depends(get_current_user),
 ):
     try:
-        return await graph_queries.get_active_themes(limit)
+        return await graph_queries.get_active_themes(limit, days)
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Graph query failed: {e}")
 

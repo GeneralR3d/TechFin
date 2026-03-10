@@ -17,6 +17,7 @@ from app.models.user import User  # noqa: E402, F401
 from app.models.holding import Holding  # noqa: E402, F401
 from app.models.raw_news import RawNewsArticle  # noqa: E402, F401
 from app.models.ingestion_job import IngestionJob  # noqa: E402, F401
+from app.models.chat import ChatSession, ChatMessage  # noqa: E402, F401
 
 config = context.config
 

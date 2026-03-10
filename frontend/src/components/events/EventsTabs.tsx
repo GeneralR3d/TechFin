@@ -17,9 +17,9 @@ const TABS = [
 ];
 
 const TIME_OPTIONS = [
-  { label: "24h", days: 1 },
-  { label: "7d", days: 7 },
-  { label: "14d", days: 14 },
+  { label: "24H", days: 1 },
+  { label: "7D", days: 7 },
+  { label: "30D", days: 30 },
 ];
 
 function sentimentGradient(score: number | null): string {
@@ -44,9 +44,9 @@ function EmptyState({ message }: { message: string }) {
   );
 }
 
-function ThemesGrid({ search }: { search: string }) {
+function ThemesGrid({ search, days }: { search: string; days: number }) {
   const navigate = useNavigate();
-  const { themes, isLoading, error } = useGraphThemes(15);
+  const { themes, isLoading, error } = useGraphThemes(15, days);
 
   const filtered = search.trim()
     ? themes.filter((t) =>
@@ -234,28 +234,26 @@ export function EventsTabs() {
           />
         </div>
 
-        {/* Time toggle — only visible on events tab */}
-        {activeTab === "events" && (
-          <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-1 shrink-0">
-            {TIME_OPTIONS.map((opt) => (
-              <button
-                key={opt.label}
-                onClick={() => setDays(opt.days)}
-                className={
-                  "rounded-md px-3 py-1 text-xs font-medium transition-colors " +
-                  (days === opt.days
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground")
-                }
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Time toggle */}
+        <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-1 shrink-0">
+          {TIME_OPTIONS.map((opt) => (
+            <button
+              key={opt.label}
+              onClick={() => setDays(opt.days)}
+              className={
+                "rounded-md px-3 py-1 text-xs font-medium transition-colors " +
+                (days === opt.days
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground")
+              }
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {activeTab === "themes" && <ThemesGrid search={search} />}
+      {activeTab === "themes" && <ThemesGrid search={search} days={days} />}
       {activeTab === "events" && <EventsList days={days} search={search} />}
     </div>
   );

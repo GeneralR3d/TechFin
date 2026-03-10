@@ -88,12 +88,14 @@ async def get_linked_articles(news_id: str, limit: int = 10) -> list[dict]:
 
 
 async def get_recent_events(days: int = 7, limit: int = 20) -> list[dict]:
+    from datetime import datetime, timedelta, timezone
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     driver = get_driver()
     async with driver.session() as session:
         result = await session.run(
             """
             MATCH (e:Event)<-[:ABOUT]-(a:NewsArticle)
-            WHERE a.published_at >= datetime() - duration({days: $days})
+            WHERE a.published_at >= $since
             WITH e, count(a) AS article_count, avg(a.sentiment_score) AS avg_sentiment
             ORDER BY article_count DESC
             LIMIT $limit
@@ -101,23 +103,26 @@ async def get_recent_events(days: int = 7, limit: int = 20) -> list[dict]:
                    e.date AS date, e.description AS description,
                    article_count, avg_sentiment
             """,
-            days=days,
+            since=since,
             limit=limit,
         )
         return [dict(r) async for r in result]
 
 
-async def get_active_themes(limit: int = 15) -> list[dict]:
+async def get_active_themes(limit: int = 15, days: int = 7) -> list[dict]:
+    from datetime import datetime, timedelta, timezone
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     driver = get_driver()
     async with driver.session() as session:
         result = await session.run(
             """
             MATCH (t:MacroTheme)<-[:PART_OF_THEME]-(a:NewsArticle)
+            WHERE a.published_at >= $since
             WITH t, count(a) AS article_count, avg(a.sentiment_score) AS avg_sentiment
             ORDER BY article_count DESC
             LIMIT $limit
             OPTIONAL MATCH (t)<-[:PART_OF_THEME]-(a2:NewsArticle)-[:MENTIONS]->(c:Company)
-            WHERE c IS NOT NULL AND NOT c.ticker STARTS WITH '__'
+            WHERE a2.published_at >= $since AND c IS NOT NULL AND NOT c.ticker STARTS WITH '__'
             WITH t, article_count, avg_sentiment,
                  c.ticker AS ticker, count(a2) AS mention_count, avg(a2.sentiment_score) AS ticker_sentiment
             WHERE ticker IS NOT NULL
@@ -128,6 +133,7 @@ async def get_active_themes(limit: int = 15) -> list[dict]:
             RETURN t.name AS name, t.description AS description,
                    article_count, avg_sentiment, top_tickers
             """,
+            since=since,
             limit=limit,
         )
         return [dict(r) async for r in result]
@@ -370,6 +376,40 @@ async def get_related_entities_for_entity(entity_type: str, entity_name: str) ->
         return d
 
 
+async def find_events_by_name(name: str, limit: int = 5) -> list[dict]:
+    driver = get_driver()
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (e:Event)
+            WHERE toLower(e.title) CONTAINS toLower($name)
+            RETURN e.id AS id, e.title AS title, e.type AS type, e.date AS date
+            ORDER BY e.title
+            LIMIT $limit
+            """,
+            name=name,
+            limit=limit,
+        )
+        return [dict(r) async for r in result]
+
+
+async def find_themes_by_name(name: str, limit: int = 5) -> list[dict]:
+    driver = get_driver()
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (t:MacroTheme)
+            WHERE toLower(t.name) CONTAINS toLower($name)
+            RETURN t.name AS name
+            ORDER BY t.name
+            LIMIT $limit
+            """,
+            name=name,
+            limit=limit,
+        )
+        return [dict(r) async for r in result]
+
+
 async def get_existing_context_nodes(limit: int = 30) -> dict:
     """Return top MacroTheme names and recent Event titles for LLM context injection."""
     try:
@@ -407,17 +447,20 @@ async def get_existing_context_nodes(limit: int = 30) -> dict:
 
 
 async def get_sector_heatmap() -> list[dict]:
+    from datetime import datetime, timedelta, timezone
+    since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     driver = get_driver()
     async with driver.session() as session:
         result = await session.run(
             """
             MATCH (s:Sector)<-[:IN_SECTOR]-(a:NewsArticle)
-            WHERE a.published_at >= datetime() - duration({days: 7})
+            WHERE a.published_at >= $since
             WITH s.name AS sector,
                  count(a) AS article_count,
                  avg(a.sentiment_score) AS avg_sentiment
             ORDER BY article_count DESC
             RETURN sector, article_count, avg_sentiment
-            """
+            """,
+            since=since,
         )
         return [dict(r) async for r in result]

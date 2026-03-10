@@ -30,9 +30,9 @@ async function themesFetcher(url: string): Promise<GraphTheme[]> {
   }));
 }
 
-export function useGraphThemes(limit = 15) {
+export function useGraphThemes(limit = 15, days = 7) {
   const { data, error, isLoading } = useSWR<GraphTheme[]>(
-    `/api/graph/themes/active?limit=${limit}`,
+    `/api/graph/themes/active?limit=${limit}&days=${days}`,
     themesFetcher,
     { revalidateOnFocus: false, dedupingInterval: 300_000 }
   );

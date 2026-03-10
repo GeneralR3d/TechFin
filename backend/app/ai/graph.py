@@ -1,167 +1,207 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, TypedDict
+import json
 import logging
+from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import SystemMessage
+from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
-from langgraph.graph import END, StateGraph
+from langgraph.graph import StateGraph
+from langgraph.graph.message import MessagesState, add_messages
+from langgraph.prebuilt import ToolNode, tools_condition
 
 from app.config import settings
-from app.ai.neo4j_client import run_cypher
-
+from app.services.graph_queries import (
+    find_events_by_name,
+    find_themes_by_name,
+    get_active_themes,
+    get_articles_by_company,
+    get_articles_by_event,
+    get_articles_by_theme,
+    get_existing_context_nodes,
+    get_recent_events,
+)
 
 logger = logging.getLogger("ai_agents")
 
 
-class AgentState(TypedDict):
-    """Shared state for the LangGraph multi-agent workflow."""
-
-    messages: List[Any]
-    cypher_query: str | None
-    query_result: List[Dict[str, Any]] | None
+class AgentState(MessagesState):
+    pass
 
 
-def _llm(system_prompt: str) -> ChatOpenAI:
-    return ChatOpenAI(
-        model=settings.OPENAI_MODEL,
-        api_key=settings.OPENAI_API_KEY,
-        temperature=0.2,
-    ).bind(system_message=system_prompt)
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
-def group_manager(state: AgentState) -> AgentState:
-    """
-    High-level planner. For now it always decides to:
-    1) generate a Cypher query
-    2) run the query
-    3) answer using the results
-    but it can be extended later.
-    """
-    messages = state["messages"]
-    # Log latest user message for traceability
-    user_message = next(
-        (m for m in reversed(messages) if isinstance(m, HumanMessage)),
-        None,
-    )
-    if user_message is not None:
-        logger.info("group_manager: received user message: %s", user_message.content)
-    else:
-        logger.info("group_manager: no HumanMessage found in state")
-    messages.append(
-        AIMessage(
-            content=(
-                "I will analyze your request, generate a Neo4j Cypher query to fetch "
-                "relevant data, run it, and then answer using the results."
-            )
-        )
-    )
-    return {**state, "messages": messages}
+def _format_articles(articles: list[dict]) -> list[dict]:
+    """Normalize datetime fields so the list is JSON-serializable."""
+    out = []
+    for a in articles:
+        row: dict[str, Any] = {}
+        for k, v in a.items():
+            row[k] = str(v) if not isinstance(v, (str, int, float, bool, type(None))) else v
+        out.append(row)
+    return out
 
 
-def neo4j_query_agent(state: AgentState) -> AgentState:
-    """
-    Generate a Cypher query based on the latest user request.
-    """
-    user_message = next(
-        (m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)),
-        None,
-    )
-    if user_message is None:
-        logger.warning("neo4j_query_agent: no HumanMessage found; skipping query generation")
-        return state
-
-    system = SystemMessage(
-        content=(
-            "You are a Cypher query generator for a Neo4j financial knowledge graph.\n"
-            "The graph has nodes like User, Holding, and others. "
-            "Return ONLY a Cypher query, nothing else.\n"
-            "Do not include backticks or explanations. Use simple RETURN clauses.\n"
-        )
-    )
-    llm = ChatOpenAI(
-        model=settings.OPENAI_MODEL,
-        api_key=settings.OPENAI_API_KEY,
-        temperature=0,
-    )
-    logger.info("neo4j_query_agent: generating Cypher for user message: %s", user_message.content)
-    response = llm.invoke([system, user_message])
-    cypher = response.content.strip()
-    logger.info("neo4j_query_agent: generated Cypher: %s", cypher)
-    return {**state, "cypher_query": cypher}
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
 
 
-def neo4j_agent(state: AgentState) -> AgentState:
-    """
-    Execute the Cypher query and stash the results.
-    """
-    cypher = state.get("cypher_query")
-    if not cypher:
-        logger.warning("neo4j_agent: no Cypher query provided; skipping execution")
-        return state
+@tool
+async def query_company_news(ticker: str, limit: int = 10) -> str:
+    """Fetch recent news articles mentioning a specific company ticker (e.g. NVDA, AAPL)."""
     try:
-        logger.info("neo4j_agent: executing Cypher: %s", cypher)
-        rows = run_cypher(cypher)
-        logger.info("neo4j_agent: query returned %d row(s)", len(rows))
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.exception("neo4j_agent: error while executing Cypher")
-        rows = [{"error": str(exc), "cypher": cypher}]
-    return {**state, "query_result": rows}
+        articles = await get_articles_by_company(ticker.upper(), limit=limit)
+        if not articles:
+            return json.dumps({"found": False, "ticker": ticker, "articles": []})
+        return json.dumps({"found": True, "ticker": ticker, "articles": _format_articles(articles)})
+    except Exception as exc:
+        logger.exception("query_company_news failed")
+        return json.dumps({"error": str(exc)})
 
 
-def answer_agent(state: AgentState) -> AgentState:
-    """
-    Use the Neo4j results plus the conversation to answer the user.
-    """
-    messages = list(state["messages"])
-    rows = state.get("query_result") or []
+@tool
+async def query_event_news(event_name: str, limit: int = 10) -> str:
+    """Fetch news articles about a named event (e.g. 'Fed rate decision', 'CPI report')."""
+    try:
+        events = await find_events_by_name(event_name, limit=5)
+        if not events:
+            return json.dumps({"found": False, "event_name": event_name, "articles": []})
+        # Use the best match (first result)
+        event_id = events[0]["id"]
+        event_title = events[0]["title"]
+        articles = await get_articles_by_event(event_id, limit=limit)
+        return json.dumps({
+            "found": True,
+            "event_name": event_title,
+            "matched_events": events,
+            "articles": _format_articles(articles),
+        })
+    except Exception as exc:
+        logger.exception("query_event_news failed")
+        return json.dumps({"error": str(exc)})
 
-    logger.info(
-        "answer_agent: building answer with %d prior messages and %d Neo4j row(s)",
-        len(messages),
-        len(rows),
+
+@tool
+async def query_theme_news(theme_name: str, limit: int = 10) -> str:
+    """Fetch news articles related to a macro theme (e.g. 'AI', 'Interest Rates', 'Energy Transition')."""
+    try:
+        themes = await find_themes_by_name(theme_name, limit=5)
+        if not themes:
+            return json.dumps({"found": False, "theme_name": theme_name, "articles": []})
+        matched_name = themes[0]["name"]
+        articles = await get_articles_by_theme(matched_name, limit=limit)
+        return json.dumps({
+            "found": True,
+            "theme_name": matched_name,
+            "matched_themes": themes,
+            "articles": _format_articles(articles),
+        })
+    except Exception as exc:
+        logger.exception("query_theme_news failed")
+        return json.dumps({"error": str(exc)})
+
+
+@tool
+async def list_recent_events(days: int = 7, limit: int = 10) -> str:
+    """List recent market events from the last N days. Use for discovery: 'what's happening?'"""
+    try:
+        events = await get_recent_events(days=days, limit=limit)
+        if not events:
+            return json.dumps({"found": False, "events": []})
+        formatted = []
+        for e in events:
+            row: dict[str, Any] = {}
+            for k, v in e.items():
+                row[k] = str(v) if not isinstance(v, (str, int, float, bool, type(None))) else v
+            formatted.append(row)
+        return json.dumps({"found": True, "events": formatted})
+    except Exception as exc:
+        logger.exception("list_recent_events failed")
+        return json.dumps({"error": str(exc)})
+
+
+@tool
+async def list_active_themes(limit: int = 10) -> str:
+    """List the currently trending macro themes by article volume. Use for: 'what themes are trending?'"""
+    try:
+        themes = await get_active_themes(limit=limit)
+        if not themes:
+            return json.dumps({"found": False, "themes": []})
+        formatted = []
+        for t in themes:
+            row: dict[str, Any] = {}
+            for k, v in t.items():
+                row[k] = str(v) if not isinstance(v, (str, int, float, bool, type(None), list)) else v
+            formatted.append(row)
+        return json.dumps({"found": True, "themes": formatted})
+    except Exception as exc:
+        logger.exception("list_active_themes failed")
+        return json.dumps({"error": str(exc)})
+
+
+TOOLS = [
+    query_company_news,
+    query_event_news,
+    query_theme_news,
+    list_recent_events,
+    list_active_themes,
+]
+
+# ---------------------------------------------------------------------------
+# System prompt builder
+# ---------------------------------------------------------------------------
+
+
+async def _build_system_prompt(state: AgentState) -> list:
+    context = await get_existing_context_nodes(limit=30)
+    theme_list = ", ".join(context["macro_themes"]) or "none indexed yet"
+    event_list = ", ".join(context["events"]) or "none indexed yet"
+
+    system_content = (
+        "You are an AI financial assistant for a fintech dashboard powered by a Neo4j knowledge graph.\n\n"
+        "You have access to tools that query indexed news articles, events, and macro themes.\n"
+        "Always use tools to fetch real data before answering questions about specific companies, "
+        "events, or themes.\n\n"
+        f"Currently indexed macro themes: {theme_list}\n"
+        f"Recent event titles: {event_list}\n\n"
+        "When you find articles, cite them using this exact format at the end of relevant sentences:\n"
+        "[Source: Article Title (https://url)]\n\n"
+        "If no data is found (found=false or empty arrays), clearly say so and offer general knowledge "
+        "as a fallback. Do not fabricate citations or URLs."
     )
 
-    system = SystemMessage(
-        content=(
-            "You are an AI assistant for a fintech dashboard. "
-            "You are given the user's question and JSON-like rows returned from a "
-            "Neo4j database query. Use those rows as factual context. "
-            "If the rows are empty, answer based on your general knowledge and say "
-            "that no matching data was found in the graph."
-        )
-    )
-    context_message = AIMessage(content=f"Neo4j rows:\n{rows!r}")
+    return [SystemMessage(content=system_content)] + list(state["messages"])
 
-    llm = ChatOpenAI(
-        model=settings.OPENAI_MODEL,
-        api_key=settings.OPENAI_API_KEY,
-        temperature=0.3,
-    )
-    response = llm.invoke([system, context_message, *messages])
-    messages.append(response)
-    return {**state, "messages": messages}
+
+# ---------------------------------------------------------------------------
+# Graph construction
+# ---------------------------------------------------------------------------
 
 
 def build_graph():
-    """
-    Build and compile the LangGraph workflow once at import time.
-    """
+    llm = ChatOpenAI(
+        model=settings.OPENAI_MODEL,
+        api_key=settings.OPENAI_API_KEY,
+        temperature=0.2,
+    ).bind_tools(TOOLS)
+
+    async def agent_node(state: AgentState) -> dict:
+        prompt = await _build_system_prompt(state)
+        response = await llm.ainvoke(prompt)
+        return {"messages": [response]}
+
     graph = StateGraph(AgentState)
-
-    graph.add_node("group_manager", group_manager)
-    graph.add_node("neo4j_query_agent", neo4j_query_agent)
-    graph.add_node("neo4j_agent", neo4j_agent)
-    graph.add_node("answer_agent", answer_agent)
-
-    graph.set_entry_point("group_manager")
-    graph.add_edge("group_manager", "neo4j_query_agent")
-    graph.add_edge("neo4j_query_agent", "neo4j_agent")
-    graph.add_edge("neo4j_agent", "answer_agent")
-    graph.add_edge("answer_agent", END)
-
+    graph.add_node("agent", agent_node)
+    graph.add_node("tools", ToolNode(TOOLS))
+    graph.set_entry_point("agent")
+    graph.add_conditional_edges("agent", tools_condition)
+    graph.add_edge("tools", "agent")
     return graph.compile()
 
 
 compiled_graph = build_graph()
-

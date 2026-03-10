@@ -8,6 +8,7 @@ import { PremiumToggle } from "@/components/ui/bouncy-toggle";
 const navLinks = [
   { href: "/", label: "Events" },
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/chat", label: "Chat" },
   { href: "/settings", label: "Settings" },
 ];
 

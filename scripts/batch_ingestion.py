@@ -34,7 +34,7 @@ def generate_monthly_ranges(start_year: int, end_year: int, end_month: int):
             time_to = f"{year}{month:02d}{last_day:02d}T2359"
             ranges.append((time_from, time_to))
             
-    return ranges
+    return list(reversed(ranges))
 
 
 async def main() -> None:
@@ -109,14 +109,19 @@ async def main() -> None:
                 await db.flush()
                 logger.info("Upserted to PG: %d new / %d total in this batch", batch_new, len(rows))
 
-                # Graph Ingestion (Parallel)
-                semaphore = asyncio.Semaphore(25)
+                # Graph Ingestion (Mixed Strategy)
+                semaphore = asyncio.Semaphore(15)
                 db_lock = asyncio.Lock()
                 batch_ingested = 0
-
-                async def _process_row(row: dict) -> None:
-                    nonlocal batch_ingested, total_ingested
-                    async with semaphore:
+                
+                tasks = []
+                for row in rows:
+                    if row["news_id"] not in new_ids:
+                        continue
+                        
+                    # Mixed execution strategy: first 50 sequentially, rest concurrently
+                    if total_ingested < 50:
+                        logger.info("Sequential mode (early item %d/50): Ingesting %s", total_ingested + 1, row["news_id"])
                         try:
                             await ingest_article_to_graph(
                                 news_id=row["news_id"],
@@ -130,17 +135,35 @@ async def main() -> None:
                                 db=db,
                                 db_lock=db_lock,
                             )
-                            async with db_lock:
-                                batch_ingested += 1
-                                total_ingested += 1
+                            batch_ingested += 1
+                            total_ingested += 1
                         except Exception as e:
-                            logger.warning("Graph ingest failed for %s: %s", row["news_id"], e)
-
-                tasks = [
-                    _process_row(row)
-                    for row in rows
-                    if row["news_id"] in new_ids
-                ]
+                            logger.warning("Sequential graph ingest failed for %s: %s", row["news_id"], e)
+                    else:
+                        # Queue up for concurrent execution
+                        async def _process_row(r: dict) -> None:
+                            nonlocal batch_ingested, total_ingested
+                            async with semaphore:
+                                try:
+                                    await ingest_article_to_graph(
+                                        news_id=r["news_id"],
+                                        title=r["title"],
+                                        content=r.get("summary", ""),
+                                        url=r["url"],
+                                        summary=r.get("summary"),
+                                        published_at=r["published_at"],
+                                        source=r["source"],
+                                        platform=r["platform"],
+                                        db=db,
+                                        db_lock=db_lock,
+                                    )
+                                    async with db_lock:
+                                        batch_ingested += 1
+                                        total_ingested += 1
+                                except Exception as e:
+                                    logger.warning("Graph ingest failed for %s: %s", r["news_id"], e)
+                                    
+                        tasks.append(_process_row(row))
 
                 if tasks:
                     await asyncio.gather(*tasks)
