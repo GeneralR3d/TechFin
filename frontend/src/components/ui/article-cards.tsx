@@ -8,10 +8,11 @@ interface ArticleCardProps extends React.HTMLAttributes<HTMLDivElement> {
   imageUrl?: string;
   gradient: string;
   badge?: React.ReactNode;
+  footer?: React.ReactNode;
 }
 
 export const ArticleCard = React.forwardRef<HTMLDivElement, ArticleCardProps>(
-  ({ category, title, meta, imageUrl, gradient, badge, className, ...props }, ref) => {
+  ({ category, title, meta, imageUrl, gradient, badge, footer, className, ...props }, ref) => {
     return (
       <div
         ref={ref}
@@ -38,11 +39,14 @@ export const ArticleCard = React.forwardRef<HTMLDivElement, ArticleCardProps>(
             </p>
             <h2 className="text-base font-bold leading-snug line-clamp-3">{title}</h2>
           </div>
-          <div className="flex items-center justify-between">
-            {meta && (
-              <span className="text-xs opacity-70">{meta}</span>
-            )}
-            {badge && <div className="ml-auto">{badge}</div>}
+          <div>
+            <div className="flex items-center justify-between">
+              {meta && (
+                <span className="text-xs opacity-70">{meta}</span>
+              )}
+              {badge && <div className="ml-auto">{badge}</div>}
+            </div>
+            {footer && <div className="mt-1">{footer}</div>}
           </div>
         </div>
       </div>

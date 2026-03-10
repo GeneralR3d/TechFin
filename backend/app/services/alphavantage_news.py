@@ -27,7 +27,9 @@ def _parse_av_datetime(dt_str: str) -> datetime:
 
 async def fetch_alphavantage_news(
     topics: list[str] | None = None,
-    limit: int = 200,
+    limit: int = 1000,
+    time_from: str | None = None,
+    time_to: str | None = None,
 ) -> list[dict]:
     """Fetch news from AlphaVantage NEWS_SENTIMENT endpoint.
 
@@ -46,6 +48,11 @@ async def fetch_alphavantage_news(
         "limit": limit,
         "apikey": settings.ALPHAVANTAGE_API_KEY,
     }
+    
+    if time_from:
+        params["time_from"] = time_from
+    if time_to:
+        params["time_to"] = time_to
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:

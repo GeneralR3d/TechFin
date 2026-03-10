@@ -9,6 +9,9 @@ import { EventsPage } from "@/pages/EventsPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { YahooFinancePage } from "@/pages/YahooFinancePage";
 import { SettingsPage } from "@/pages/SettingsPage";
+import { EventDetailPage } from "@/pages/EventDetailPage";
+import { ThemeDetailPage } from "@/pages/ThemeDetailPage";
+import { EntityDetailPage } from "@/pages/EntityDetailPage";
 
 export function App() {
   return (
@@ -24,6 +27,9 @@ export function App() {
                 <Route path="dashboard" element={<DashboardPage />} />
                 <Route path="yahoo-finance" element={<YahooFinancePage />} />
                 <Route path="settings" element={<SettingsPage />} />
+                <Route path="event/:eventId" element={<EventDetailPage />} />
+                <Route path="theme/:themeName" element={<ThemeDetailPage />} />
+                <Route path="entity/:entityType/:entityName" element={<EntityDetailPage />} />
               </Route>
             </Route>
           </Routes>

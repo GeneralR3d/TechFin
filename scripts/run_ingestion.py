@@ -71,24 +71,38 @@ async def main() -> None:
             await db.flush()
             logger.info("Upserted to PG: %d new / %d total", articles_new, articles_fetched)
 
-            for row in rows:
-                if row["news_id"] not in new_ids:
-                    continue
-                try:
-                    await ingest_article_to_graph(
-                        news_id=row["news_id"],
-                        title=row["title"],
-                        content=row.get("summary", ""),
-                        url=row["url"],
-                        summary=row.get("summary"),
-                        published_at=row["published_at"],
-                        source=row["source"],
-                        platform=row["platform"],
-                        db=db,
-                    )
-                    articles_ingested += 1
-                except Exception as e:
-                    logger.warning("Graph ingest failed for %s: %s", row["news_id"], e)
+            semaphore = asyncio.Semaphore(25)
+            db_lock = asyncio.Lock()
+
+            async def _process_row(row: dict) -> None:
+                nonlocal articles_ingested
+                async with semaphore:
+                    try:
+                        await ingest_article_to_graph(
+                            news_id=row["news_id"],
+                            title=row["title"],
+                            content=row.get("summary", ""),
+                            url=row["url"],
+                            summary=row.get("summary"),
+                            published_at=row["published_at"],
+                            source=row["source"],
+                            platform=row["platform"],
+                            db=db,
+                            db_lock=db_lock,
+                        )
+                        async with db_lock:
+                            articles_ingested += 1
+                    except Exception as e:
+                        logger.warning("Graph ingest failed for %s: %s", row["news_id"], e)
+
+            tasks = [
+                _process_row(row)
+                for row in rows
+                if row["news_id"] in new_ids
+            ]
+
+            if tasks:
+                await asyncio.gather(*tasks)
 
             await db.commit()
 

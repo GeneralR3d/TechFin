@@ -8,6 +8,7 @@ export interface GraphEvent {
   date: string;
   description: string;
   articleCount: number;
+  avgSentiment: number | null;
 }
 
 async function eventsFetcher(url: string): Promise<GraphEvent[]> {
@@ -19,6 +20,7 @@ async function eventsFetcher(url: string): Promise<GraphEvent[]> {
     date: (item.date as string) ?? "",
     description: (item.description as string) ?? "",
     articleCount: (item.article_count as number) ?? 0,
+    avgSentiment: (item.avg_sentiment as number | null) ?? null,
   }));
 }
 

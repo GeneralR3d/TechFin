@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -21,6 +22,7 @@ async def ingest_article_to_graph(
     source: str,
     platform: str,
     db: AsyncSession,
+    db_lock: asyncio.Lock | None = None,
 ) -> None:
     """Extract entities via LLM and MERGE them into Neo4j, then mark PG record as ingested."""
     entities = await extract_entities(title, content or summary or "")
@@ -190,13 +192,21 @@ async def ingest_article_to_graph(
 
     # Mark as graph-ingested in PostgreSQL
     from app.models.raw_news import RawNewsArticle
-    result = await db.execute(
-        select(RawNewsArticle).where(RawNewsArticle.news_id == news_id)
-    )
-    record = result.scalar_one_or_none()
-    if record:
-        record.graph_ingested = True
-        record.graph_ingested_at = datetime.now(timezone.utc)
+    
+    async def _update_pg():
+        result = await db.execute(
+            select(RawNewsArticle).where(RawNewsArticle.news_id == news_id)
+        )
+        record = result.scalar_one_or_none()
+        if record:
+            record.graph_ingested = True
+            record.graph_ingested_at = datetime.now(timezone.utc)
+            
+    if db_lock:
+        async with db_lock:
+            await _update_pg()
+    else:
+        await _update_pg()
 
     logger.info("[graph] Ingested article %s", news_id)
 

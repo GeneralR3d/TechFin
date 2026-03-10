@@ -94,12 +94,12 @@ async def get_recent_events(days: int = 7, limit: int = 20) -> list[dict]:
             """
             MATCH (e:Event)<-[:ABOUT]-(a:NewsArticle)
             WHERE a.published_at >= datetime() - duration({days: $days})
-            WITH e, count(a) AS article_count
+            WITH e, count(a) AS article_count, avg(a.sentiment_score) AS avg_sentiment
             ORDER BY article_count DESC
             LIMIT $limit
             RETURN e.id AS id, e.title AS title, e.type AS type,
                    e.date AS date, e.description AS description,
-                   article_count
+                   article_count, avg_sentiment
             """,
             days=days,
             limit=limit,
@@ -116,12 +116,258 @@ async def get_active_themes(limit: int = 15) -> list[dict]:
             WITH t, count(a) AS article_count, avg(a.sentiment_score) AS avg_sentiment
             ORDER BY article_count DESC
             LIMIT $limit
+            OPTIONAL MATCH (t)<-[:PART_OF_THEME]-(a2:NewsArticle)-[:MENTIONS]->(c:Company)
+            WHERE c IS NOT NULL AND NOT c.ticker STARTS WITH '__'
+            WITH t, article_count, avg_sentiment,
+                 c.ticker AS ticker, count(a2) AS mention_count, avg(a2.sentiment_score) AS ticker_sentiment
+            WHERE ticker IS NOT NULL
+            WITH t, article_count, avg_sentiment,
+                 {ticker: ticker, sentiment: ticker_sentiment, count: mention_count} AS ticker_data
+            ORDER BY ticker_data.count DESC
+            WITH t, article_count, avg_sentiment, collect(ticker_data)[0..3] AS top_tickers
             RETURN t.name AS name, t.description AS description,
-                   article_count, avg_sentiment
+                   article_count, avg_sentiment, top_tickers
             """,
             limit=limit,
         )
         return [dict(r) async for r in result]
+
+
+async def get_articles_by_event(event_id: str, limit: int = 20) -> list[dict]:
+    driver = get_driver()
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (e:Event {id: $event_id})<-[:ABOUT]-(a:NewsArticle)
+            RETURN a.news_id AS news_id, a.title AS title, a.url AS url,
+                   a.summary AS summary, a.published_at AS published_at,
+                   a.source AS source, a.platform AS platform,
+                   a.sentiment_score AS sentiment_score
+            ORDER BY a.published_at DESC
+            LIMIT $limit
+            """,
+            event_id=event_id,
+            limit=limit,
+        )
+        return [dict(r) async for r in result]
+
+
+async def get_event_entities(event_id: str) -> dict:
+    driver = get_driver()
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (e:Event {id: $event_id})<-[:ABOUT]-(a:NewsArticle)
+            OPTIONAL MATCH (a)-[:MENTIONS]->(c:Company)
+            WHERE NOT c.ticker STARTS WITH '__'
+            OPTIONAL MATCH (a)-[:MENTIONS]->(g:Geography)
+            OPTIONAL MATCH (a)-[:MENTIONS]->(i:Institution)
+            OPTIONAL MATCH (a)-[:MENTIONS]->(p:Person)
+            OPTIONAL MATCH (a)-[:IN_SECTOR]->(s:Sector)
+            OPTIONAL MATCH (a)-[:IN_INDUSTRY]->(ind:Industry)
+            RETURN
+              collect(DISTINCT {ticker: c.ticker, name: c.name}) AS companies,
+              collect(DISTINCT {name: g.name, geo_type: g.geo_type}) AS geographies,
+              collect(DISTINCT {name: i.name, inst_type: i.inst_type}) AS institutions,
+              collect(DISTINCT {name: p.name, role: p.role}) AS persons,
+              collect(DISTINCT s.name) AS sectors,
+              collect(DISTINCT ind.name) AS industries
+            """,
+            event_id=event_id,
+        )
+        row = await result.single()
+        if not row:
+            return {"companies": [], "geographies": [], "institutions": [], "persons": [], "sectors": [], "industries": []}
+        d = dict(row)
+        # Filter out null entries from OPTIONAL MATCHes
+        d["companies"] = [x for x in d.get("companies", []) if x.get("ticker")]
+        d["geographies"] = [x for x in d.get("geographies", []) if x.get("name")]
+        d["institutions"] = [x for x in d.get("institutions", []) if x.get("name")]
+        d["persons"] = [x for x in d.get("persons", []) if x.get("name")]
+        d["sectors"] = [x for x in d.get("sectors", []) if x]
+        d["industries"] = [x for x in d.get("industries", []) if x]
+        return d
+
+
+async def get_theme_entities(theme_name: str) -> dict:
+    driver = get_driver()
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (t:MacroTheme {name: $theme_name})<-[:PART_OF_THEME]-(a:NewsArticle)
+            OPTIONAL MATCH (a)-[:MENTIONS]->(c:Company)
+            WHERE NOT c.ticker STARTS WITH '__'
+            OPTIONAL MATCH (a)-[:MENTIONS]->(g:Geography)
+            OPTIONAL MATCH (a)-[:MENTIONS]->(i:Institution)
+            OPTIONAL MATCH (a)-[:MENTIONS]->(p:Person)
+            OPTIONAL MATCH (a)-[:IN_SECTOR]->(s:Sector)
+            OPTIONAL MATCH (a)-[:IN_INDUSTRY]->(ind:Industry)
+            RETURN
+              collect(DISTINCT {ticker: c.ticker, name: c.name}) AS companies,
+              collect(DISTINCT {name: g.name, geo_type: g.geo_type}) AS geographies,
+              collect(DISTINCT {name: i.name, inst_type: i.inst_type}) AS institutions,
+              collect(DISTINCT {name: p.name, role: p.role}) AS persons,
+              collect(DISTINCT s.name) AS sectors,
+              collect(DISTINCT ind.name) AS industries
+            """,
+            theme_name=theme_name,
+        )
+        row = await result.single()
+        if not row:
+            return {"companies": [], "geographies": [], "institutions": [], "persons": [], "sectors": [], "industries": []}
+        d = dict(row)
+        d["companies"] = [x for x in d.get("companies", []) if x.get("ticker")]
+        d["geographies"] = [x for x in d.get("geographies", []) if x.get("name")]
+        d["institutions"] = [x for x in d.get("institutions", []) if x.get("name")]
+        d["persons"] = [x for x in d.get("persons", []) if x.get("name")]
+        d["sectors"] = [x for x in d.get("sectors", []) if x]
+        d["industries"] = [x for x in d.get("industries", []) if x]
+        return d
+
+
+async def get_articles_by_industry(industry_name: str, limit: int = 20) -> list[dict]:
+    driver = get_driver()
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (i:Industry {name: $name})<-[:IN_INDUSTRY]-(a:NewsArticle)
+            RETURN a.news_id AS news_id, a.title AS title, a.url AS url,
+                   a.summary AS summary, a.published_at AS published_at,
+                   a.source AS source, a.platform AS platform,
+                   a.sentiment_score AS sentiment_score
+            ORDER BY a.published_at DESC
+            LIMIT $limit
+            """,
+            name=industry_name,
+            limit=limit,
+        )
+        return [dict(r) async for r in result]
+
+
+async def get_articles_by_geography(geo_name: str, limit: int = 20) -> list[dict]:
+    driver = get_driver()
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (g:Geography {name: $name})<-[:MENTIONS]-(a:NewsArticle)
+            RETURN a.news_id AS news_id, a.title AS title, a.url AS url,
+                   a.summary AS summary, a.published_at AS published_at,
+                   a.source AS source, a.platform AS platform,
+                   a.sentiment_score AS sentiment_score
+            ORDER BY a.published_at DESC
+            LIMIT $limit
+            """,
+            name=geo_name,
+            limit=limit,
+        )
+        return [dict(r) async for r in result]
+
+
+async def get_articles_by_institution(inst_name: str, limit: int = 20) -> list[dict]:
+    driver = get_driver()
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (i:Institution {name: $name})<-[:MENTIONS]-(a:NewsArticle)
+            RETURN a.news_id AS news_id, a.title AS title, a.url AS url,
+                   a.summary AS summary, a.published_at AS published_at,
+                   a.source AS source, a.platform AS platform,
+                   a.sentiment_score AS sentiment_score
+            ORDER BY a.published_at DESC
+            LIMIT $limit
+            """,
+            name=inst_name,
+            limit=limit,
+        )
+        return [dict(r) async for r in result]
+
+
+async def get_articles_by_person(person_name: str, limit: int = 20) -> list[dict]:
+    driver = get_driver()
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (p:Person {name: $name})<-[:MENTIONS]-(a:NewsArticle)
+            RETURN a.news_id AS news_id, a.title AS title, a.url AS url,
+                   a.summary AS summary, a.published_at AS published_at,
+                   a.source AS source, a.platform AS platform,
+                   a.sentiment_score AS sentiment_score
+            ORDER BY a.published_at DESC
+            LIMIT $limit
+            """,
+            name=person_name,
+            limit=limit,
+        )
+        return [dict(r) async for r in result]
+
+
+async def get_articles_by_entity(entity_type: str, entity_name: str, limit: int = 20) -> list[dict]:
+    """Dispatch to the appropriate article query by entity type."""
+    if entity_type == "company":
+        return await get_articles_by_company(entity_name.upper(), limit)
+    elif entity_type == "sector":
+        return await get_articles_by_sector(entity_name, limit)
+    elif entity_type == "theme":
+        return await get_articles_by_theme(entity_name, limit)
+    elif entity_type == "industry":
+        return await get_articles_by_industry(entity_name, limit)
+    elif entity_type == "geography":
+        return await get_articles_by_geography(entity_name, limit)
+    elif entity_type == "institution":
+        return await get_articles_by_institution(entity_name, limit)
+    elif entity_type == "person":
+        return await get_articles_by_person(entity_name, limit)
+    return []
+
+
+async def get_related_entities_for_entity(entity_type: str, entity_name: str) -> dict:
+    """Two-hop: find all articles linked to entity, collect all related entity types."""
+    driver = get_driver()
+
+    # Build the initial MATCH clause depending on entity type
+    match_clauses = {
+        "company": "MATCH (e:Company {ticker: $name})<-[:MENTIONS]-(a:NewsArticle)",
+        "sector": "MATCH (e:Sector {name: $name})<-[:IN_SECTOR]-(a:NewsArticle)",
+        "industry": "MATCH (e:Industry {name: $name})<-[:IN_INDUSTRY]-(a:NewsArticle)",
+        "geography": "MATCH (e:Geography {name: $name})<-[:MENTIONS]-(a:NewsArticle)",
+        "institution": "MATCH (e:Institution {name: $name})<-[:MENTIONS]-(a:NewsArticle)",
+        "person": "MATCH (e:Person {name: $name})<-[:MENTIONS]-(a:NewsArticle)",
+        "theme": "MATCH (e:MacroTheme {name: $name})<-[:PART_OF_THEME]-(a:NewsArticle)",
+    }
+    match_clause = match_clauses.get(entity_type, "MATCH (e {name: $name})<--(a:NewsArticle)")
+
+    async with driver.session() as session:
+        result = await session.run(
+            f"""
+            {match_clause}
+            OPTIONAL MATCH (a)-[:MENTIONS]->(c:Company)
+            WHERE NOT c.ticker STARTS WITH '__'
+            OPTIONAL MATCH (a)-[:MENTIONS]->(g:Geography)
+            OPTIONAL MATCH (a)-[:MENTIONS]->(i:Institution)
+            OPTIONAL MATCH (a)-[:MENTIONS]->(p:Person)
+            OPTIONAL MATCH (a)-[:IN_SECTOR]->(s:Sector)
+            OPTIONAL MATCH (a)-[:IN_INDUSTRY]->(ind:Industry)
+            RETURN
+              collect(DISTINCT {{ticker: c.ticker, name: c.name}}) AS companies,
+              collect(DISTINCT {{name: g.name, geo_type: g.geo_type}}) AS geographies,
+              collect(DISTINCT {{name: i.name, inst_type: i.inst_type}}) AS institutions,
+              collect(DISTINCT {{name: p.name, role: p.role}}) AS persons,
+              collect(DISTINCT s.name) AS sectors,
+              collect(DISTINCT ind.name) AS industries
+            """,
+            name=entity_name,
+        )
+        row = await result.single()
+        if not row:
+            return {"companies": [], "geographies": [], "institutions": [], "persons": [], "sectors": [], "industries": []}
+        d = dict(row)
+        d["companies"] = [x for x in d.get("companies", []) if x.get("ticker")]
+        d["geographies"] = [x for x in d.get("geographies", []) if x.get("name")]
+        d["institutions"] = [x for x in d.get("institutions", []) if x.get("name")]
+        d["persons"] = [x for x in d.get("persons", []) if x.get("name")]
+        d["sectors"] = [x for x in d.get("sectors", []) if x]
+        d["industries"] = [x for x in d.get("industries", []) if x]
+        return d
 
 
 async def get_existing_context_nodes(limit: int = 30) -> dict:

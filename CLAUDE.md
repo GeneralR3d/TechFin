@@ -88,6 +88,7 @@ All follow try-real-API / fallback-to-mock pattern:
 - `twitter.py`, `linkedin.py`, `sentiment.py` — mock-only
 - `sectors.py`, `market_movers.py` — external integrations
 - `llm_extraction.py` — OpenAI gpt-4o-mini entity extraction from articles
+- `llm_analysis.py` — OpenAI gpt-4o-mini analysis for events/themes; in-memory TTL cache (1 hour); returns `null` if no API key
 - `graph_ingestion.py` — MERGE nodes/relationships in Neo4j; `upsert_raw_article()` to PG staging
 - `graph_queries.py` — Cypher query functions backing the graph API
 - `news_fetcher.py` — Yahoo RSS adapter for APScheduler hourly job
@@ -117,14 +118,15 @@ APScheduler also runs the same pipeline hourly via `fetch_yahoo_rss()`, recordin
 
 #### Routing
 ```
-/login            → LoginPage
-/register         → RegisterPage
-/ (protected)     → AppLayout (TopNav + FirstLoginDialog + Outlet)
-  /               → EventsPage
-  /dashboard      → DashboardPage
-  /yahoo-finance  → YahooFinancePage
-  /social-media   → SocialMediaPage
-  /settings       → SettingsPage
+/login              → LoginPage
+/register           → RegisterPage
+/ (protected)       → AppLayout (TopNav + FirstLoginDialog + Outlet)
+  /                 → EventsPage
+  /dashboard        → DashboardPage
+  /yahoo-finance    → YahooFinancePage
+  /settings         → SettingsPage
+  /event/:eventId   → EventDetailPage
+  /theme/:themeName → ThemeDetailPage
 ```
 
 #### Auth
@@ -142,6 +144,10 @@ SWR hooks in `src/hooks/` with snake_case → camelCase transforms:
 - `useHoldings` — optimistic add/delete
 - `useFirstLogin` — checks `/api/auth/me`, manages onboarding
 - `useYahooFinance`, `useReddit`, `useSentiment`, `useSectors`, `useMarketMovers`
+- `useGraphEvents`, `useGraphThemes`, `useGraphHeatmap` — graph API hooks for EventsPage
+- `useGraphNews`, `useGraphNewsByTheme` — news fetching by company/theme
+- `useEventArticles`, `useEventEntities`, `useEventAnalysis` — EventDetailPage data
+- `useThemeEntities`, `useThemeAnalysis` — ThemeDetailPage data
 
 #### Path Alias
 `@/*` → `./src/*` (configured in `tsconfig.json` and `vite.config.ts`)
