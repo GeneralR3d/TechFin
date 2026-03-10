@@ -5,7 +5,11 @@
 .env
 .env.local
 
+# Build / runtime artifacts
+.next/
+
 # Frontend
+node_modules/
 frontend/node_modules/
 frontend/dist/
 frontend/*.tsbuildinfo
