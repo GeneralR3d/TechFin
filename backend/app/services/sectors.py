@@ -1,10 +1,12 @@
 import asyncio
 import logging
+import time
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
+# ETF symbol + market weight
 SECTOR_MAP = [
     {"symbol": "XLK",  "name": "Technology",          "market_weight": 29.0},
     {"symbol": "XLF",  "name": "Financials",           "market_weight": 13.0},
@@ -19,26 +21,11 @@ SECTOR_MAP = [
     {"symbol": "XLRE", "name": "Real Estate",          "market_weight": 2.5},
 ]
 
-
-def _mock_sectors() -> list[dict]:
-    mock_returns = [1.85, 0.42, -0.31, 2.10, -1.20, 0.75, -0.55, 3.20, 0.15, -0.80, 0.60]
-    mock_ytd = [8.45, 4.20, -1.50, 12.30, -3.10, 5.60, 2.10, 18.40, 1.80, -2.30, 3.70]
-    mock_prices = [215.30, 42.15, 138.90, 190.45, 74.20, 118.60, 72.40, 94.15, 88.20, 65.30, 42.80]
-    return [
-        {
-            "symbol": s["symbol"],
-            "name": s["name"],
-            "day_return": mock_returns[i],
-            "ytd_return": mock_ytd[i],
-            "market_weight": s["market_weight"],
-            "price": mock_prices[i],
-        }
-        for i, s in enumerate(SECTOR_MAP)
-    ]
+_cache: dict = {"data": None, "ts": 0.0}
+_CACHE_TTL = 15 * 60  # 15 minutes
 
 
-async def _fetch_single_sector(client: httpx.AsyncClient, sector: dict) -> dict:
-    symbol = sector["symbol"]
+async def _fetch_etf_data(client: httpx.AsyncClient, symbol: str) -> dict:
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
     try:
         resp = await client.get(
@@ -48,51 +35,49 @@ async def _fetch_single_sector(client: httpx.AsyncClient, sector: dict) -> dict:
             timeout=10.0,
         )
         resp.raise_for_status()
-        data = resp.json()
-        meta = data["chart"]["result"][0]["meta"]
+        result = resp.json()["chart"]["result"][0]
+        meta = result["meta"]
+        price = round(meta.get("regularMarketPrice", 0.0), 2)
+        ytd_base = meta.get("chartPreviousClose", 0.0)  # Dec 31 prev year
 
-        current_price = meta.get("regularMarketPrice", 0.0)
-        prev_close = meta.get("chartPreviousClose") or meta.get("previousClose", current_price)
-        day_return = ((current_price - prev_close) / prev_close * 100) if prev_close else 0.0
-
-        closes = data["chart"]["result"][0].get("indicators", {}).get("quote", [{}])[0].get("close", [])
+        # Get yesterday's close from the closes array (last non-null value)
+        closes = result.get("indicators", {}).get("quote", [{}])[0].get("close", [])
         valid_closes = [c for c in closes if c is not None]
-        if len(valid_closes) >= 2:
-            ytd_return = (valid_closes[-1] - valid_closes[0]) / valid_closes[0] * 100
-        else:
-            ytd_return = 0.0
+        prev_close = valid_closes[-2] if len(valid_closes) >= 2 else 0.0
 
-        return {
-            "symbol": symbol,
-            "name": sector["name"],
-            "day_return": round(day_return, 2),
-            "ytd_return": round(ytd_return, 2),
-            "market_weight": sector["market_weight"],
-            "price": round(current_price, 2),
-        }
+        day_return = round((price - prev_close) / prev_close * 100, 2) if prev_close else 0.0
+        ytd_return = round((price - ytd_base) / ytd_base * 100, 2) if ytd_base else 0.0
+
+        return {"price": price, "day_return": day_return, "ytd_return": ytd_return}
     except Exception as e:
-        logger.warning("[sectors] Failed to fetch %s: %s", symbol, e)
-        return None  # type: ignore[return-value]
+        logger.debug("[sectors] ETF data fetch failed for %s: %s", symbol, e)
+        return {"price": 0.0, "day_return": 0.0, "ytd_return": 0.0}
 
 
 async def fetch_sector_data() -> list[dict]:
-    try:
-        async with httpx.AsyncClient() as client:
-            results = await asyncio.gather(
-                *[_fetch_single_sector(client, s) for s in SECTOR_MAP],
-                return_exceptions=True,
-            )
+    now = time.monotonic()
+    if _cache["data"] and now - _cache["ts"] < _CACHE_TTL:
+        return _cache["data"]
 
-        sectors = []
-        mock = _mock_sectors()
-        for i, result in enumerate(results):
-            if isinstance(result, dict) and result is not None:
-                sectors.append(result)
-            else:
-                logger.warning("[sectors] Using mock for %s", SECTOR_MAP[i]["symbol"])
-                sectors.append(mock[i])
-        return sectors
+    symbols = [s["symbol"] for s in SECTOR_MAP]
+    async with httpx.AsyncClient() as client:
+        results = await asyncio.gather(
+            *[_fetch_etf_data(client, sym) for sym in symbols],
+            return_exceptions=True,
+        )
 
-    except Exception as e:
-        logger.error("[sectors] Fetch error: %s", e)
-        return _mock_sectors()
+    sectors = []
+    for entry, result in zip(SECTOR_MAP, results):
+        data = result if isinstance(result, dict) else {"price": 0.0, "day_return": 0.0, "ytd_return": 0.0}
+        sectors.append({
+            "symbol": entry["symbol"],
+            "name": entry["name"],
+            "day_return": data["day_return"],
+            "ytd_return": data["ytd_return"],
+            "market_weight": entry["market_weight"],
+            "price": data["price"],
+        })
+
+    _cache["data"] = sectors
+    _cache["ts"] = now
+    return sectors

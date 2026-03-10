@@ -1,5 +1,6 @@
 import logging
 import re
+import time
 
 import httpx
 
@@ -7,87 +8,134 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+_cache: dict = {"data": None, "ts": 0.0}
+_CACHE_TTL = 5 * 60  # 5 minutes
 
-def _mock_movers() -> dict:
+_us_ticker = re.compile(r"^[A-Z]{1,5}(\.[A-Z]{1,2})?$")
+
+
+def _is_us_ticker(ticker: str) -> bool:
+    return bool(_us_ticker.match(ticker))
+
+
+def _parse_movers(items: list, n: int, us_only: bool = False) -> list[dict]:
+    result = []
+    for item in items:
+        if len(result) >= n:
+            break
+        ticker = item.get("ticker", "")
+        if us_only and not _is_us_ticker(ticker):
+            continue
+        result.append({
+            "ticker": ticker,
+            "price": item.get("price", "0"),
+            "change_amount": item.get("change_amount", "0"),
+            "change_percentage": item.get("change_percentage", "0%"),
+            "volume": item.get("volume", "0"),
+        })
+    return result
+
+
+async def _fetch_alphavantage_movers(api_key: str) -> dict | None:
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            "https://www.alphavantage.co/query",
+            params={"function": "TOP_GAINERS_LOSERS", "apikey": api_key},
+            timeout=15.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    if "Information" in data or "Note" in data:
+        logger.warning("[market-movers] AlphaVantage rate limited")
+        return None
+
+    gainers = _parse_movers(data.get("top_gainers", []), 5)
+    losers = _parse_movers(data.get("top_losers", []), 5)
+    most_active = _parse_movers(data.get("most_actively_traded", []), 10, us_only=True)
+
+    if not gainers and not losers and not most_active:
+        return None
+
+    return {"top_gainers": gainers, "top_losers": losers, "most_active": most_active}
+
+
+def _parse_yahoo_quote(item: dict) -> dict:
+    ticker = item.get("symbol", "")
+    price = item.get("regularMarketPrice", 0.0)
+    change = item.get("regularMarketChange", 0.0)
+    pct = item.get("regularMarketChangePercent", 0.0)
+    volume = item.get("regularMarketVolume", 0)
     return {
-        "top_gainers": [
-            {"ticker": "NVDA", "price": "875.40", "change_amount": "42.30", "change_percentage": "5.08%", "volume": "52,341,200"},
-            {"ticker": "META", "price": "512.80", "change_amount": "21.50", "change_percentage": "4.38%", "volume": "18,920,400"},
-            {"ticker": "AMD",  "price": "178.65", "change_amount": "6.90",  "change_percentage": "4.02%", "volume": "34,150,800"},
-            {"ticker": "TSLA", "price": "248.30", "change_amount": "8.15",  "change_percentage": "3.40%", "volume": "91,230,600"},
-            {"ticker": "AMZN", "price": "192.45", "change_amount": "5.60",  "change_percentage": "3.00%", "volume": "29,810,300"},
-        ],
-        "top_losers": [
-            {"ticker": "PFE",  "price": "27.80",  "change_amount": "-1.95", "change_percentage": "-6.56%", "volume": "43,200,100"},
-            {"ticker": "INTC", "price": "21.40",  "change_amount": "-1.20", "change_percentage": "-5.31%", "volume": "38,410,700"},
-            {"ticker": "BA",   "price": "172.60", "change_amount": "-8.90", "change_percentage": "-4.90%", "volume": "12,650,400"},
-            {"ticker": "CVS",  "price": "54.20",  "change_amount": "-2.40", "change_percentage": "-4.24%", "volume": "9,870,200"},
-            {"ticker": "WBA",  "price": "10.85",  "change_amount": "-0.45", "change_percentage": "-3.98%", "volume": "15,340,600"},
-        ],
-        "most_active": [
-            {"ticker": "TSLA", "price": "248.30", "change_amount": "8.15",   "change_percentage": "3.40%",  "volume": "91,230,600"},
-            {"ticker": "NVDA", "price": "875.40", "change_amount": "42.30",  "change_percentage": "5.08%",  "volume": "52,341,200"},
-            {"ticker": "AMD",  "price": "178.65", "change_amount": "6.90",   "change_percentage": "4.02%",  "volume": "34,150,800"},
-            {"ticker": "AAPL", "price": "189.50", "change_amount": "-1.20",  "change_percentage": "-0.63%", "volume": "31,540,900"},
-            {"ticker": "PFE",  "price": "27.80",  "change_amount": "-1.95",  "change_percentage": "-6.56%", "volume": "43,200,100"},
-            {"ticker": "AMZN", "price": "192.45", "change_amount": "5.60",   "change_percentage": "3.00%",  "volume": "29,810,300"},
-            {"ticker": "MSFT", "price": "415.20", "change_amount": "3.80",   "change_percentage": "0.92%",  "volume": "22,640,700"},
-            {"ticker": "INTC", "price": "21.40",  "change_amount": "-1.20",  "change_percentage": "-5.31%", "volume": "38,410,700"},
-            {"ticker": "GOOGL","price": "175.30", "change_amount": "2.10",   "change_percentage": "1.21%",  "volume": "21,130,500"},
-            {"ticker": "BAC",  "price": "38.45",  "change_amount": "0.55",   "change_percentage": "1.45%",  "volume": "19,870,300"},
-        ],
+        "ticker": ticker,
+        "price": f"{price:.2f}",
+        "change_amount": f"{change:+.2f}",
+        "change_percentage": f"{pct:+.2f}%",
+        "volume": f"{volume:,}",
     }
 
 
+async def _fetch_yahoo_movers() -> dict | None:
+    base = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
+    params_list = [
+        ("day_gainers", "top_gainers", 5),
+        ("day_losers", "top_losers", 5),
+        ("most_actives", "most_active", 10),
+    ]
+    result: dict = {}
+    async with httpx.AsyncClient() as client:
+        for scr_id, key, n in params_list:
+            try:
+                resp = await client.get(
+                    base,
+                    params={"scrIds": scr_id, "count": n},
+                    headers={"User-Agent": "Mozilla/5.0"},
+                    timeout=10.0,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                quotes = (
+                    data.get("finance", {})
+                    .get("result", [{}])[0]
+                    .get("quotes", [])
+                )
+                result[key] = [_parse_yahoo_quote(q) for q in quotes[:n]]
+            except Exception as e:
+                logger.debug("[market-movers] Yahoo %s failed: %s", scr_id, e)
+                result[key] = []
+
+    if not any(result.values()):
+        return None
+    return result
+
+
 async def fetch_market_movers() -> dict:
+    now = time.monotonic()
+    if _cache["data"] and now - _cache["ts"] < _CACHE_TTL:
+        return _cache["data"]
+
     api_key = settings.ALPHAVANTAGE_API_KEY or "demo"
 
+    # Primary: AlphaVantage
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                "https://www.alphavantage.co/query",
-                params={"function": "TOP_GAINERS_LOSERS", "apikey": api_key},
-                timeout=15.0,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-
-        if "Information" in data or "Note" in data:
-            logger.warning("[market-movers] API limit reached, using mock data")
-            return _mock_movers()
-
-        # US-listed tickers: 1-5 uppercase letters, optional .A/.B share class suffix
-        _us_ticker = re.compile(r"^[A-Z]{1,5}(\.[A-Z]{1,2})?$")
-
-        def is_us_ticker(ticker: str) -> bool:
-            return bool(_us_ticker.match(ticker))
-
-        def parse_movers_n(items: list, n: int, us_only: bool = False) -> list[dict]:
-            result = []
-            for item in items:
-                if len(result) >= n:
-                    break
-                ticker = item.get("ticker", "")
-                if us_only and not is_us_ticker(ticker):
-                    continue
-                result.append({
-                    "ticker": ticker,
-                    "price": item.get("price", "0"),
-                    "change_amount": item.get("change_amount", "0"),
-                    "change_percentage": item.get("change_percentage", "0%"),
-                    "volume": item.get("volume", "0"),
-                })
-            return result
-
-        gainers = parse_movers_n(data.get("top_gainers", []), 5)
-        losers = parse_movers_n(data.get("top_losers", []), 5)
-        most_active = parse_movers_n(data.get("most_actively_traded", []), 10, us_only=True)
-
-        if not gainers and not losers and not most_active:
-            return _mock_movers()
-
-        return {"top_gainers": gainers, "top_losers": losers, "most_active": most_active}
-
+        data = await _fetch_alphavantage_movers(api_key)
+        if data:
+            _cache["data"] = data
+            _cache["ts"] = now
+            return data
     except Exception as e:
-        logger.error("[market-movers] Fetch error: %s", e)
-        return _mock_movers()
+        logger.warning("[market-movers] AlphaVantage failed: %s", e)
+
+    # Secondary: Yahoo Finance
+    try:
+        data = await _fetch_yahoo_movers()
+        if data:
+            _cache["data"] = data
+            _cache["ts"] = now
+            return data
+    except Exception as e:
+        logger.warning("[market-movers] Yahoo movers failed: %s", e)
+
+    # Both failed — return empty (no stale mock)
+    logger.error("[market-movers] All sources failed, returning empty lists")
+    return {"top_gainers": [], "top_losers": [], "most_active": []}

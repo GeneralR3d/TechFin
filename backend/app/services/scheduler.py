@@ -6,6 +6,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.database import async_session
 from app.services.news_fetcher import fetch_yahoo_rss
+from app.services.alphavantage_news import fetch_alphavantage_news
 from app.services.graph_ingestion import upsert_raw_article, ingest_article_to_graph
 
 logger = logging.getLogger(__name__)
@@ -92,6 +93,81 @@ async def _run_yahoo_rss_job() -> None:
     )
 
 
+async def _run_alphavantage_job() -> None:
+    from app.models.ingestion_job import IngestionJob
+
+    started_at = datetime.now(timezone.utc)
+    articles_fetched = 0
+    articles_new = 0
+    articles_ingested = 0
+
+    async with async_session() as db:
+        job = IngestionJob(source="alphavantage", started_at=started_at, status="running")
+        db.add(job)
+        await db.flush()
+
+        try:
+            rows = await fetch_alphavantage_news()
+            articles_fetched = len(rows)
+
+            new_ids: set[str] = set()
+            for row in rows:
+                is_new, _ = await upsert_raw_article(
+                    db=db,
+                    news_id=row["news_id"],
+                    title=row["title"],
+                    url=row["url"],
+                    summary=row.get("summary"),
+                    published_at=row["published_at"],
+                    source=row["source"],
+                    platform=row["platform"],
+                    ticker_hint=row.get("ticker_hint"),
+                    raw_tags=row.get("raw_tags", []),
+                )
+                if is_new:
+                    articles_new += 1
+                    new_ids.add(row["news_id"])
+
+            await db.flush()
+
+            for row in rows:
+                if row["news_id"] in new_ids:
+                    try:
+                        await ingest_article_to_graph(
+                            news_id=row["news_id"],
+                            title=row["title"],
+                            content=row.get("summary", ""),
+                            url=row["url"],
+                            summary=row.get("summary"),
+                            published_at=row["published_at"],
+                            source=row["source"],
+                            platform=row["platform"],
+                            db=db,
+                        )
+                        articles_ingested += 1
+                    except Exception as e:
+                        logger.warning("[scheduler] AV graph ingest failed for %s: %s", row["news_id"], e)
+
+            job.status = "completed"
+
+        except Exception as e:
+            job.status = "failed"
+            job.error = str(e)
+            logger.error("[scheduler] AlphaVantage job failed: %s", e)
+
+        finally:
+            job.completed_at = datetime.now(timezone.utc)
+            job.articles_fetched = articles_fetched
+            job.articles_new = articles_new
+            job.articles_graph_ingested = articles_ingested
+            await db.commit()
+
+    logger.info(
+        "[scheduler] AlphaVantage job done: fetched=%s new=%s ingested=%s",
+        articles_fetched, articles_new, articles_ingested,
+    )
+
+
 def get_scheduler() -> AsyncIOScheduler:
     global _scheduler
     if _scheduler is None:
@@ -101,6 +177,13 @@ def get_scheduler() -> AsyncIOScheduler:
             trigger="interval",
             hours=1,
             id="yahoo_rss_ingest",
+            replace_existing=True,
+        )
+        _scheduler.add_job(
+            _run_alphavantage_job,
+            trigger="interval",
+            hours=24,
+            id="alphavantage_ingest",
             replace_existing=True,
         )
     return _scheduler
