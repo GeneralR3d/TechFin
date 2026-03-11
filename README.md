@@ -13,7 +13,7 @@ Try it live at [tech-fin-xi.vercel.app](https://tech-fin-xi.vercel.app/) and log
 
 ### Demo Video
 
- [![Demo Video]([https://img.youtube.com/vi/Jn0XqxhPRJE/maxresdefault.jpg)](https://youtu.be/Jn0XqxhPRJE)](https://img.youtube.com/vi/Jn0XqxhPRJE/maxresdefault.jpg)](https://youtu.be/Jn0XqxhPRJE))    
+[![Demo Video](https://img.youtube.com/vi/Jn0XqxhPRJE/maxresdefault.jpg)](https://youtu.be/Jn0XqxhPRJE)
 
 
 ---
