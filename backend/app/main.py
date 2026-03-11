@@ -18,6 +18,7 @@ from app.routes import (
 from app.routes import graph
 from app.database_graph import create_constraints, close_driver
 from app.services.scheduler import start_scheduler, stop_scheduler
+from app.config import settings
 
 
 @asynccontextmanager
@@ -31,9 +32,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="TechFin API", lifespan=lifespan)
 
+_allowed_origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

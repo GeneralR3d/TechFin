@@ -22,5 +22,9 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
 
+    # Comma-separated list of allowed CORS origins
+    # e.g. "https://tech-fin-xi.vercel.app,http://localhost:5173"
+    ALLOWED_ORIGINS: str = "https://tech-fin-xi.vercel.app"
+
 
 settings = Settings()  # type: ignore[call-arg]
