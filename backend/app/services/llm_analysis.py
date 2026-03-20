@@ -177,7 +177,8 @@ _PORTFOLIO_SUGGESTION_SCHEMA = """{
       "long_term_pct": number (estimated % price change over a longer horizon, e.g. +30.0),
       "long_term_label": "string (time horizon for long_term_pct, e.g. \"3 months\", \"6 months\", \"1 year\")",
       "price_outlook": "string (1-2 sentence narrative covering both the near and long term trajectory)",
-      "reasoning": "string (2-3 sentences grounded in the news)"
+      "reasoning": "string (2-3 sentences grounded in the news)",
+      "citations": [{"title": "string", "url": "string"}]
     }
   ],
   "market_context": "string (2-3 sentences on the overall market backdrop)"
@@ -190,6 +191,7 @@ _PORTFOLIO_SYSTEM_PROMPT = (
     "For each ticker, choose appropriate time horizons that make sense given the news — "
     "short_term could be 'This week', '2 weeks', or '1 month'; long_term could be '3 months', '6 months', or '1 year'. "
     "Estimate realistic percentage price changes for each horizon (e.g. -11.0 short term but +30.0 long term). "
+    "For citations, include the title and url of each article you used for that ticker's reasoning. "
     "Be direct and data-driven. Return ONLY valid JSON matching this exact schema:\n"
     + _PORTFOLIO_SUGGESTION_SCHEMA
     + "\nDo not invent news. Only reference what is in the provided articles."

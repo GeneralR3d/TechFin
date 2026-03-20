@@ -18,6 +18,11 @@ router = APIRouter(prefix="/api/suggestions", tags=["suggestions"])
 logger = logging.getLogger(__name__)
 
 
+class ArticleCitation(BaseModel):
+    title: str
+    url: str
+
+
 class TickerSuggestion(BaseModel):
     ticker: str
     quantity: float
@@ -29,6 +34,7 @@ class TickerSuggestion(BaseModel):
     long_term_label: str | None = None
     price_outlook: str
     reasoning: str
+    citations: list[ArticleCitation] = []
 
 
 class PortfolioSuggestionsResponse(BaseModel):
@@ -118,6 +124,12 @@ async def get_suggestions(
 
     for s in llm_suggestions:
         ticker = s.get("ticker", "").upper()
+        raw_citations = s.get("citations") or []
+        citations = [
+            ArticleCitation(title=c.get("title", ""), url=c.get("url", ""))
+            for c in raw_citations
+            if isinstance(c, dict) and c.get("url")
+        ]
         merged.append(
             TickerSuggestion(
                 ticker=ticker,
@@ -130,6 +142,7 @@ async def get_suggestions(
                 long_term_label=s.get("long_term_label"),
                 price_outlook=s.get("price_outlook", ""),
                 reasoning=s.get("reasoning", ""),
+                citations=citations,
             )
         )
 

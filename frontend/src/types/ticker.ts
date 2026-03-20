@@ -4,6 +4,11 @@ export interface Ticker {
   sector?: string;
 }
 
+export interface ArticleCitation {
+  title: string;
+  url: string;
+}
+
 export interface TickerSuggestion {
   ticker: string;
   quantity: number;
@@ -15,6 +20,7 @@ export interface TickerSuggestion {
   long_term_label: string | null;
   price_outlook: string;
   reasoning: string;
+  citations: ArticleCitation[];
 }
 
 export interface PortfolioSuggestionsResponse {
