@@ -4,7 +4,7 @@ import { authedFetcher } from "@/lib/fetcher";
 export interface SectorData {
   symbol: string;
   name: string;
-  dayReturn: number;
+  weekReturn: number;
   ytdReturn: number;
   marketWeight: number;
   price: number;
@@ -15,7 +15,7 @@ async function sectorsFetcher(url: string): Promise<SectorData[]> {
   return (data as Record<string, unknown>[]).map((item) => ({
     symbol: (item.symbol as string) ?? "",
     name: (item.name as string) ?? "",
-    dayReturn: (item.day_return as number) ?? 0,
+    weekReturn: (item.week_return as number) ?? 0,
     ytdReturn: (item.ytd_return as number) ?? 0,
     marketWeight: (item.market_weight as number) ?? 0,
     price: (item.price as number) ?? 0,

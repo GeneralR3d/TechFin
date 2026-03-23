@@ -30,7 +30,7 @@ async def _fetch_etf_data(client: httpx.AsyncClient, symbol: str) -> dict:
     try:
         resp = await client.get(
             url,
-            params={"interval": "1d", "range": "ytd"},
+            params={"interval": "1d", "range": "5d"},
             headers={"User-Agent": "Mozilla/5.0"},
             timeout=10.0,
         )
@@ -43,12 +43,12 @@ async def _fetch_etf_data(client: httpx.AsyncClient, symbol: str) -> dict:
         # Get yesterday's close from the closes array (last non-null value)
         closes = result.get("indicators", {}).get("quote", [{}])[0].get("close", [])
         valid_closes = [c for c in closes if c is not None]
-        prev_close = valid_closes[-2] if len(valid_closes) >= 2 else 0.0
+        week_base = valid_closes[0] if valid_closes else 0.0
 
-        day_return = round((price - prev_close) / prev_close * 100, 2) if prev_close else 0.0
+        week_return = round((price - week_base) / week_base * 100, 2) if week_base else 0.0
         ytd_return = round((price - ytd_base) / ytd_base * 100, 2) if ytd_base else 0.0
 
-        return {"price": price, "day_return": day_return, "ytd_return": ytd_return}
+        return {"price": price, "week_return": week_return, "ytd_return": ytd_return}
     except Exception as e:
         logger.debug("[sectors] ETF data fetch failed for %s: %s", symbol, e)
         return {"price": 0.0, "day_return": 0.0, "ytd_return": 0.0}
@@ -72,7 +72,7 @@ async def fetch_sector_data() -> list[dict]:
         sectors.append({
             "symbol": entry["symbol"],
             "name": entry["name"],
-            "day_return": data["day_return"],
+            "week_return": data["week_return"],
             "ytd_return": data["ytd_return"],
             "market_weight": entry["market_weight"],
             "price": data["price"],

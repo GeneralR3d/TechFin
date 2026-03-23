@@ -2,18 +2,18 @@ import { Treemap, ResponsiveContainer, Tooltip } from "recharts";
 import { useSectors, SectorData } from "@/hooks/useSectors";
 import { Skeleton } from "@/components/ui/skeleton";
 
-function getColor(dayReturn: number): string {
-  if (dayReturn < -2) return "#dc2626";
-  if (dayReturn < -0.5) return "#f87171";
-  if (dayReturn < 0.5) return "#6b7280";
-  if (dayReturn < 2) return "#4ade80";
+function getColor(weekReturn: number): string {
+  if (weekReturn < -2) return "#dc2626";
+  if (weekReturn < -0.5) return "#f87171";
+  if (weekReturn < 0.5) return "#6b7280";
+  if (weekReturn < 2) return "#4ade80";
   return "#16a34a";
 }
 
 interface TreemapNode {
   name: string;
   symbol: string;
-  dayReturn: number;
+  weekReturn: number;
   ytdReturn: number;
   marketWeight: number;
   price: number;
@@ -27,11 +27,11 @@ interface CustomContentProps {
   width?: number;
   height?: number;
   name?: string;
-  dayReturn?: number;
+  weekReturn?: number;
 }
 
-function CustomContent({ x = 0, y = 0, width = 0, height = 0, name = "", dayReturn = 0 }: CustomContentProps) {
-  const color = getColor(dayReturn);
+function CustomContent({ x = 0, y = 0, width = 0, height = 0, name = "", weekReturn = 0 }: CustomContentProps) {
+  const color = getColor(weekReturn);
   const showText = width > 50 && height > 40;
 
   return (
@@ -64,7 +64,7 @@ function CustomContent({ x = 0, y = 0, width = 0, height = 0, name = "", dayRetu
             fontSize={Math.min(12, width / 8)}
             fontWeight="500"
           >
-            {dayReturn >= 0 ? "+" : ""}{dayReturn.toFixed(2)}%
+            {weekReturn >= 0 ? "+" : ""}{weekReturn.toFixed(2)}%
           </text>
         </>
       )}
@@ -82,8 +82,8 @@ function CustomTooltip({ payload }: { payload?: TooltipPayload[] }) {
   return (
     <div className="bg-popover border border-border rounded-md px-3 py-2 shadow-md text-sm">
       <p className="font-semibold mb-1">{d.name} ({d.symbol})</p>
-      <p>Day Return: <span className={d.dayReturn >= 0 ? "text-green-500" : "text-red-500"}>
-        {d.dayReturn >= 0 ? "+" : ""}{d.dayReturn.toFixed(2)}%
+      <p>1W Return: <span className={d.weekReturn >= 0 ? "text-green-500" : "text-red-500"}>
+        {d.weekReturn >= 0 ? "+" : ""}{d.weekReturn.toFixed(2)}%
       </span></p>
       <p className="text-muted-foreground">Market Weight: {d.marketWeight.toFixed(1)}%</p>
       <p className="text-muted-foreground">YTD Return: {d.ytdReturn >= 0 ? "+" : ""}{d.ytdReturn.toFixed(2)}%</p>
@@ -110,7 +110,7 @@ export function SectorHeatmap() {
   const data: TreemapNode[] = sectors.map((s: SectorData) => ({
     name: s.name,
     symbol: s.symbol,
-    dayReturn: s.dayReturn,
+    weekReturn: s.weekReturn,
     ytdReturn: s.ytdReturn,
     marketWeight: s.marketWeight,
     price: s.price,
@@ -127,7 +127,7 @@ export function SectorHeatmap() {
           content={(props) => (
             <CustomContent
               {...props}
-              dayReturn={(props as unknown as { dayReturn?: number }).dayReturn}
+              weekReturn={(props as unknown as { weekReturn?: number }).weekReturn}
             />
           )}
         >
