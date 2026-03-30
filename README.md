@@ -1,6 +1,7 @@
 # TechFin — Know the World Before the Market Does
 
 > **Real-time geopolitical intelligence meets personal portfolio management.**
+> **Update: 1st place winner of the 2026 NTU Fintech Hackathon**
 
 TechFin is an AI-powered personal finance dashboard that doesn't just track your stocks — it reads the world. By aggregating news across multiple sources, performing deep sentiment analysis, and mapping relationships between global events and financial sectors, TechFin gives retail investors the kind of macro-awareness that used to be reserved for institutional traders.
 
